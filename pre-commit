@@ -1,0 +1,90 @@
+#!/bin/bash
+# Requires bash, as it uses the [[]] syntax.
+#
+# If it's puppet code, lint it up.
+
+# I we don't have puppet-lint, so just exit and leave them be.
+which puppet-lint >/dev/null 2>&1 || exit
+
+# Redirect output to stderr.
+exec 1>&2
+
+# Stuff goes here
+declare -a FILES
+IFS="
+"
+FILES=$(git diff --cached --name-only --diff-filter=ACM )
+
+# Make some arrays, to do things to later.
+declare -a manifests
+declare -a rubifests
+
+
+for file in ${FILES[@]}
+do
+  if [[ $file =~ \.*.pp$ ]]
+  then
+    # Adding an element to an array.
+    manifests=( "${manifests[@]}" "${file}" )
+    continue
+  fi
+
+  if [[ $file =~ Puppetfile$ ]]
+  then
+    # Adding an element to an array.
+    rubifests=( "${rubifests[@]}" "${file}" )
+    continue
+  fi
+done
+
+if [ ${#manifests[@]} -ge 1 ]
+then
+
+  badfiles=$(egrep -ql '^\s+requires\s+=>\s+' ${manifests[@]})
+  RC=$?
+  if [ $RC -ne 1 ]
+  then
+    echo "Some dumbass tried to use 'requires' in ${badfiles}"
+    egrep --line-number -H '^\s+requires\s+=>\s+' ${manifests[@]}
+    exit $(( 10 + $RC ))
+  fi
+
+  badfiles=$(egrep -q '^\s+provider\s+=>\s+gems\b' ${manifests[@]})
+  RC=$?
+  if [ $RC -ne 1 ]
+  then
+    echo "Some dumbass tried to use 'provider => gems' in ${badfiles}"
+    egrep --line-number -H '^\s+provider\s+=>\s+gems\b' ${manifests[@]}
+    exit $(( 10 + $RC ))
+  fi
+
+  badfiles=$(egrep -q '\bheira\b' ${manifests[@]})
+  RC=$?
+  if [ $RC -ne 1 ]
+  then
+    echo "You spelt hiera wrong in ${badfiles}"
+    egrep --line-number -H '\bheira\b'  ${manifests[@]}
+    exit $(( 10 + $RC ))
+  fi
+
+  puppet-lint --with-filename ${manifests[@]}
+  RC=$?
+  if [ $RC -ne 0 ]
+  then
+    exit $RC
+  fi
+fi
+
+if [ ${#rubifests[@]} -ge 1 ]
+then
+  declare -a RUBYOUT
+  RUBYOUT=$(ruby -c ${rubifests[@]} 2>&1)
+  if [ $RC -ne 0 ]
+  then
+    echo "You made an error in the Puppetfile."
+    echo "${RUBYOUT[@]}"
+    exit $RC
+  fi
+fi
+
+exit 0
