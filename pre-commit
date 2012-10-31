@@ -4,13 +4,7 @@
 # If it's puppet code, lint it up.
 
 # I we don't have puppet-lint, so just exit and leave them be.
-which puppet-lint >/dev/null 2>&1
-if [ $? -eq 0 ]
-then
-  PUPPETLINT=1
-else
-  PUPPETLINT=0
-fi
+which puppet-lint >/dev/null 2>&1 || exit
 
 # Redirect output to stderr.
 exec 1>&2
@@ -73,22 +67,19 @@ then
     exit $(( 10 + $RC ))
   fi
 
-  if [ $PUPPETLINT -eq 1 ]
+  puppet-lint --with-filename ${manifests[@]}
+  RC=$?
+  if [ $RC -ne 0 ]
   then
-    puppet-lint --with-filename ${manifests[@]}
-    RC=$?
-    if [ $RC -ne 0 ]
-    then
-      exit $RC
-    fi
+    exit $RC
   fi
-
 fi
 
 if [ ${#rubifests[@]} -ge 1 ]
 then
   declare -a RUBYOUT
   RUBYOUT=$(ruby -c ${rubifests[@]} 2>&1)
+  RC=$?
   if [ $RC -ne 0 ]
   then
     echo "You made an error in the Puppetfile."
